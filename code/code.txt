@@ -1,0 +1,103 @@
+# ===========================
+# ✅ Health Assistant AI (Open Model, No API Key Needed)
+# Model: tiiuae/falcon-rw-1b
+# ===========================
+
+!pip install -q gradio transformers accelerate pandas matplotlib
+
+import gradio as gr
+import pandas as pd
+import matplotlib.pyplot as plt
+from transformers import AutoTokenizer, AutoModelForCausalLM
+import torch
+
+# Load open-access model
+model_id = "tiiuae/falcon-rw-1b"
+tokenizer = AutoTokenizer.from_pretrained(model_id)
+model = AutoModelForCausalLM.from_pretrained(
+    model_id,
+    device_map="auto",
+    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32
+)
+
+# AI response generator
+def ask_model(prompt):
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    with torch.no_grad():
+        output = model.generate(**inputs, max_new_tokens=300, do_sample=True, temperature=0.7)
+    return tokenizer.decode(output[0], skip_special_tokens=True).replace(prompt, "").strip()
+
+# Modules
+def health_chat(question):
+    prompt = f"You're a medical assistant. Answer this question:\nQ: {question}\nA:"
+    return ask_model(prompt)
+
+def symptom_checker(symptoms, duration, severity):
+    prompt = f"""Analyze these symptoms:
+    Symptoms: {symptoms}
+    Duration: {duration}
+    Severity: {severity}/10
+
+    Provide:
+    1. Possible conditions
+    2. Suggestions
+    3. When to seek help\nA:"""
+    return ask_model(prompt)
+
+def treatment_plan(condition, age, existing, meds):
+    prompt = f"""Create a treatment plan:
+    Condition: {condition}
+    Age: {age}
+    Existing Conditions: {existing}
+    Medications: {meds}
+
+    Include:
+    - Medicines
+    - Lifestyle
+    - Diet
+    - Follow-up\nA:"""
+    return ask_model(prompt)
+
+def analyze_csv(file):
+    df = pd.read_csv(file.name)
+    summary = df.describe().to_string()
+    fig, ax = plt.subplots(figsize=(10, 4))
+    df.plot(ax=ax)
+    plt.tight_layout()
+    return summary, fig
+
+# UI
+with gr.Blocks() as app:
+    gr.Markdown("## 🏥 Health Assistant AI\nFree fallback version (no IBM, no login)")
+
+    with gr.Tab("🧠 Health Q&A"):
+        q = gr.Textbox(label="Ask your health question")
+        q_btn = gr.Button("Get Answer")
+        q_out = gr.Textbox(label="AI Answer")
+        q_btn.click(fn=health_chat, inputs=q, outputs=q_out)
+
+    with gr.Tab("🔍 Symptom Checker"):
+        s = gr.Textbox(label="Describe symptoms")
+        d = gr.Dropdown(["<1 day", "1-3 days", "4-7 days", "1-2 weeks", ">2 weeks"], label="Duration")
+        sev = gr.Slider(1, 10, value=5, label="Severity")
+        s_btn = gr.Button("Analyze")
+        s_out = gr.Textbox(label="AI Prediction")
+        s_btn.click(fn=symptom_checker, inputs=[s, d, sev], outputs=s_out)
+
+    with gr.Tab("💊 Treatment Plan"):
+        c = gr.Textbox(label="Condition")
+        a = gr.Number(label="Age", value=30)
+        e = gr.Textbox(label="Existing conditions")
+        m = gr.Textbox(label="Medications")
+        t_btn = gr.Button("Generate Plan")
+        t_out = gr.Textbox(label="AI Plan")
+        t_btn.click(fn=treatment_plan, inputs=[c, a, e, m], outputs=t_out)
+
+    with gr.Tab("📊 Health CSV Analytics"):
+        f = gr.File(label="Upload CSV")
+        f_btn = gr.Button("Analyze CSV")
+        desc = gr.Textbox(label="Summary")
+        fig = gr.Plot()
+        f_btn.click(fn=analyze_csv, inputs=f, outputs=[desc, fig])
+
+app.launch(share=True)
